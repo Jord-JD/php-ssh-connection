@@ -5,6 +5,15 @@ use PHPUnit\Framework\TestCase;
 
 final class SSHConnectionTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (getenv('RUN_SSH_INTEGRATION_TESTS') !== '1') {
+            $this->markTestSkipped('Set RUN_SSH_INTEGRATION_TESTS=1 to run SSH integration tests.');
+        }
+    }
+
     public function testUpload()
     {
         $connection = (new SSHConnection())
