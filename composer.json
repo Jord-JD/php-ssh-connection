@@ -1,25 +1,33 @@
 {
-    "name": "divineomega/php-ssh-connection",
-    "description": "Provides an elegant syntax to connect to SSH servers and execute commands.",
-    "type": "library",
-    "license": "LGPL-3.0-only",
-    "authors": [
-        {
-            "name": "Jordan Hall",
-            "email": "jordan@hall05.co.uk"
-        }
-    ],
-    "require": {
-        "php": ">=7.1",
-        "phpseclib/phpseclib": "^2.0"
-    },
-    "require-dev": {
-        "phpunit/phpunit": "^7.0||^8.0",
-        "php-coveralls/php-coveralls": "^2.0"
-    },
-    "autoload": {
-        "psr-4": {
-            "DivineOmega\\SSHConnection\\": "src/"
-        }
+  "name": "jord-jd/php-ssh-connection",
+  "description": "Provides an elegant syntax to connect to SSH servers and execute commands.",
+  "type": "library",
+  "license": "LGPL-3.0-only",
+  "authors": [
+    {
+      "name": "Jordan Hall",
+      "email": "jordan@hall05.co.uk"
     }
+  ],
+  "require": {
+    "php": ">=7.1",
+    "phpseclib/phpseclib": "^2.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^7.0||^8.0",
+    "php-coveralls/php-coveralls": "^2.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "DivineOmega\\SSHConnection\\": "src/"
+    }
+  },
+  "replace": {
+    "divineomega/php-ssh-connection": "self.version"
+  },
+  "extra": {
+    "branch-alias": {
+      "dev-master": "3.0-dev"
+    }
+  }
 }

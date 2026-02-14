@@ -1,7 +1,7 @@
 # PHP SSH Connection
 
-[![Build Status](https://travis-ci.com/DivineOmega/php-ssh-connection.svg?branch=master)](https://travis-ci.com/DivineOmega/php-ssh-connection)
-[![Coverage Status](https://coveralls.io/repos/github/DivineOmega/php-ssh-connection/badge.svg?branch=master)](https://coveralls.io/github/DivineOmega/php-ssh-connection?branch=master)
+[![Build Status](https://travis-ci.com/Jord-JD/php-ssh-connection.svg?branch=master)](https://travis-ci.com/Jord-JD/php-ssh-connection)
+[![Coverage Status](https://coveralls.io/repos/github/Jord-JD/php-ssh-connection/badge.svg?branch=master)](https://coveralls.io/github/Jord-JD/php-ssh-connection?branch=master)
 
 The PHP SSH Connection package provides an elegant syntax to connect to SSH servers and execute commands. It supports both password and public-private keypair authentication, and can easily capture command output and errors.
 
@@ -10,7 +10,7 @@ The PHP SSH Connection package provides an elegant syntax to connect to SSH serv
 You can install the PHP SSH Connection package by running the following Composer command.
 
 ```bash
-composer require divineomega/php-ssh-connection
+composer require jord-jd/php-ssh-connection
 ```
 
 ## Usage
