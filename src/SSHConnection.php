@@ -1,6 +1,6 @@
 <?php
 
-namespace DivineOmega\SSHConnection;
+namespace JordJD\SSHConnection;
 
 use InvalidArgumentException;
 use phpseclib\Crypt\RSA;

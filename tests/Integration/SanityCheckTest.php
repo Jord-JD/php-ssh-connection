@@ -1,6 +1,6 @@
 <?php
 
-use DivineOmega\SSHConnection\SSHConnection;
+use JordJD\SSHConnection\SSHConnection;
 use PHPUnit\Framework\TestCase;
 
 final class SanityCheckTest extends TestCase

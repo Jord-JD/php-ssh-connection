@@ -1,6 +1,6 @@
 <?php
 
-namespace DivineOmega\SSHConnection;
+namespace JordJD\SSHConnection;
 
 use phpseclib\Net\SSH2;
 use RuntimeException;
