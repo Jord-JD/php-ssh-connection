@@ -4,6 +4,8 @@
 
 The PHP SSH Connection package provides an elegant syntax to connect to SSH servers and execute commands. It supports password and public-private key authentication, and can capture command output and errors.
 
+Supported runtimes: PHP 7.2+ and PHP 8.x.
+
 ## Installation
 
 Install with Composer:

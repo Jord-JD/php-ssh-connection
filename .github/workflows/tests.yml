@@ -12,15 +12,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - php: '7.0'
-            composer: 'v1'
-          - php: '7.4'
-            composer: 'v2'
-          - php: '8.0'
-            composer: 'v2'
-          - php: '8.4'
-            composer: 'v2'
+        php:
+          - '7.2'
+          - '7.4'
+          - '8.0'
+          - '8.4'
 
     steps:
       - name: Checkout
@@ -30,7 +26,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          tools: composer:${{ matrix.composer }}
+          tools: composer:v2
           coverage: none
 
       - name: Install dependencies
