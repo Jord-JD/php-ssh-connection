@@ -18,6 +18,7 @@ class SSHConnection
     private $username;
     private $password;
     private $privateKeyPath;
+    private $privateKeyContents;
     private $timeout;
     private $connected = false;
     private $ssh;
@@ -52,6 +53,12 @@ class SSHConnection
         return $this;
     }
 
+    public function withPrivateKeyString(string $privateKeyContents): self
+    {
+        $this->privateKeyContents = $privateKeyContents;
+        return $this;
+    }
+
     public function timeout(int $timeout): self
     {
         $this->timeout = $timeout;
@@ -68,8 +75,8 @@ class SSHConnection
             throw new InvalidArgumentException('Username not specified.');
         }
 
-        if (!$this->password && (!$this->privateKeyPath)) {
-            throw new InvalidArgumentException('No password or private key path specified.');
+        if (!$this->password && !$this->privateKeyPath && !$this->privateKeyContents) {
+            throw new InvalidArgumentException('No password or private key specified.');
         }
     }
 
@@ -83,9 +90,15 @@ class SSHConnection
             throw new RuntimeException('Error connecting to server.');
         }
 
-        if ($this->privateKeyPath) {
+        if ($this->privateKeyPath || $this->privateKeyContents) {
             $key = new RSA();
-            $key->loadKey(file_get_contents($this->privateKeyPath));
+
+            if ($this->privateKeyPath) {
+                $key->loadKey(file_get_contents($this->privateKeyPath));
+            } else if ($this->privateKeyContents) {
+                $key->loadKey($this->privateKeyContents);
+            }
+
             $authenticated = $this->ssh->login($this->username, $key);
             if (!$authenticated) {
                 throw new RuntimeException('Error authenticating with public-private key pair.');
