@@ -10,11 +10,11 @@
     }
   ],
   "require": {
-    "php": ">=7.1",
+    "php": ">=7.0",
     "phpseclib/phpseclib": "^2.0"
   },
   "require-dev": {
-    "phpunit/phpunit": "^9.6"
+    "phpunit/phpunit": "^6.5 || ^7.5 || ^8.5 || ^9.6 || ^10.5 || ^11.5"
   },
   "autoload": {
     "psr-4": {
@@ -26,7 +26,7 @@
   },
   "extra": {
     "branch-alias": {
-      "dev-master": "3.0-dev"
+      "dev-master": "3.1-dev"
     }
   }
 }

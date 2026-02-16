@@ -1,21 +1,18 @@
 # PHP SSH Connection
 
-[![Build Status](https://travis-ci.com/Jord-JD/php-ssh-connection.svg?branch=master)](https://travis-ci.com/Jord-JD/php-ssh-connection)
-[![Coverage Status](https://coveralls.io/repos/github/Jord-JD/php-ssh-connection/badge.svg?branch=master)](https://coveralls.io/github/Jord-JD/php-ssh-connection?branch=master)
+[![Tests](https://github.com/Jord-JD/php-ssh-connection/actions/workflows/tests.yml/badge.svg)](https://github.com/Jord-JD/php-ssh-connection/actions/workflows/tests.yml)
 
-The PHP SSH Connection package provides an elegant syntax to connect to SSH servers and execute commands. It supports both password and public-private keypair authentication, and can easily capture command output and errors.
+The PHP SSH Connection package provides an elegant syntax to connect to SSH servers and execute commands. It supports password and public-private key authentication, and can capture command output and errors.
 
 ## Installation
 
-You can install the PHP SSH Connection package by running the following Composer command.
+Install with Composer:
 
 ```bash
 composer require jord-jd/php-ssh-connection
 ```
 
 ## Usage
-
-See the following basic usage instructions.
 
 ```php
 $connection = (new SSHConnection())
@@ -24,32 +21,66 @@ $connection = (new SSHConnection())
             ->as('demo')
             ->withPassword('password')
          // ->withPrivateKey($privateKeyPath)
-         // ->timeout(0)
+         // ->withPrivateKeyString($privateKeyContents)
+         // ->timeout(30)
             ->connect();
 
 $command = $connection->run('echo "Hello world!"');
 
-$command->getOutput();  // 'Hello World'
+$command->getOutput();  // 'Hello world!'
 $command->getError();   // ''
 
 $connection->upload($localPath, $remotePath);
-$connection->download($remotePath, $localPath);
+$connection->download($remotePath, $localPath); // supports recursive directory downloads
 ```
 
-For security, you can fingerprint the remote server and verify the fingerprint remains the same 
-upon each subsequent connection.
+### Running multiple commands
+
+Each `run()` call executes in a fresh shell context. If you need stateful command execution (for example `cd` then `touch`), use `runCommands()`:
 
 ```php
-$fingerprint = $connection->fingerprint();
+$connection->runCommands([
+    'cd /var/www/html',
+    'mkdir -p app',
+    'cd app',
+    'touch index.php',
+]);
+```
 
-if ($newConnection->fingerprint() != $fingerprint) {
+### Fingerprint verification
+
+For security, you can fingerprint the remote server and verify it remains the same across connections.
+
+```php
+$fingerprint = $connection->fingerprint(); // defaults to MD5 for backward compatibility
+
+if ($newConnection->fingerprint() !== $fingerprint) {
     throw new Exception('Fingerprint does not match!');
 }
 ```
 
-If you wish, you can specify the type of fingerprint you wish to retrieve.
+Available fingerprint types:
 
 ```php
-$md5Fingerprint  = $connection->fingerprint(SSHConnection::FINGERPRINT_MD5); // default
-$sha1Fingerprint = $connection->fingerprint(SSHConnection::FINGERPRINT_SHA1);
+$md5Fingerprint    = $connection->fingerprint(SSHConnection::FINGERPRINT_MD5);
+$sha1Fingerprint   = $connection->fingerprint(SSHConnection::FINGERPRINT_SHA1);
+$sha256Fingerprint = $connection->fingerprint(SSHConnection::FINGERPRINT_SHA256);
+$sha512Fingerprint = $connection->fingerprint(SSHConnection::FINGERPRINT_SHA512);
+```
+
+## Testing
+
+The package test suite includes SSH integration tests. Set these variables before running tests:
+
+- `RUN_SSH_INTEGRATION_TESTS=1`
+- `SSH_TEST_HOST`
+- `SSH_TEST_PORT`
+- `SSH_TEST_USER`
+- `SSH_TEST_PRIVATE_KEY_PATH` or `SSH_TEST_PRIVATE_KEY_CONTENTS`
+- `SSH_TEST_PASSWORD` (only required for password-auth test)
+
+Then run:
+
+```bash
+vendor/bin/phpunit
 ```

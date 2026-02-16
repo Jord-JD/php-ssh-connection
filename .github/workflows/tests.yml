@@ -1,0 +1,80 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  phpunit:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: '7.0'
+            composer: 'v1'
+          - php: '7.4'
+            composer: 'v2'
+          - php: '8.0'
+            composer: 'v2'
+          - php: '8.4'
+            composer: 'v2'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:${{ matrix.composer }}
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --no-interaction --prefer-dist --no-progress
+
+      - name: Configure SSH integration server
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+
+          sudo userdel -r ci-test >/dev/null 2>&1 || true
+          sudo useradd -m -s /bin/bash ci-test
+          echo 'ci-test:ci-test-password' | sudo chpasswd
+
+          mkdir -p "$HOME/.ssh"
+          ssh-keygen -q -t rsa -b 4096 -N '' -f "$HOME/.ssh/php_ssh_connection_ci_key"
+
+          sudo mkdir -p /home/ci-test/.ssh
+          cat "$HOME/.ssh/php_ssh_connection_ci_key.pub" | sudo tee /home/ci-test/.ssh/authorized_keys >/dev/null
+          sudo chown -R ci-test:ci-test /home/ci-test/.ssh
+          sudo chmod 700 /home/ci-test/.ssh
+          sudo chmod 600 /home/ci-test/.ssh/authorized_keys
+
+          if grep -q '^#\?PasswordAuthentication ' /etc/ssh/sshd_config; then
+            sudo sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          else
+            echo 'PasswordAuthentication yes' | sudo tee -a /etc/ssh/sshd_config >/dev/null
+          fi
+
+          if grep -q '^#\?PubkeyAuthentication ' /etc/ssh/sshd_config; then
+            sudo sed -i 's/^#\?PubkeyAuthentication .*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+          else
+            echo 'PubkeyAuthentication yes' | sudo tee -a /etc/ssh/sshd_config >/dev/null
+          fi
+
+          sudo service ssh restart
+
+      - name: Run tests
+        env:
+          RUN_SSH_INTEGRATION_TESTS: '1'
+          SSH_TEST_HOST: 127.0.0.1
+          SSH_TEST_PORT: '22'
+          SSH_TEST_USER: ci-test
+          SSH_TEST_PASSWORD: ci-test-password
+        run: |
+          export SSH_TEST_PRIVATE_KEY_PATH="$HOME/.ssh/php_ssh_connection_ci_key"
+          vendor/bin/phpunit
