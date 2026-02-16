@@ -64,12 +64,6 @@ class SSHConnection
         return $this;
     }
 
-    public function withPrivateKeyString(string $privateKeyContents): self
-    {
-        $this->privateKeyContents = $privateKeyContents;
-        return $this;
-    }
-
     public function timeout(int $timeout): self
     {
         $this->timeout = $timeout;

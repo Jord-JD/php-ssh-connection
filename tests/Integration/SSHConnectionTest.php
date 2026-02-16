@@ -90,26 +90,6 @@ final class SSHConnectionTest extends TestCase
         $this->assertSame('', $command->getRawError());
     }
 
-    public function testSSHConnectionWithKeyContents()
-    {
-        $privateKeyContents = file_get_contents('/home/travis/.ssh/id_rsa');
-
-        $connection = (new SSHConnection())
-            ->to('localhost')
-            ->onPort(22)
-            ->as('travis')
-            ->withPrivateKeyString($privateKeyContents)
-            ->connect();
-
-        $command = $connection->run('echo "Hello world!"');
-
-        $this->assertEquals('Hello world!', $command->getOutput());
-        $this->assertEquals('Hello world!'."\n", $command->getRawOutput());
-
-        $this->assertEquals('', $command->getError());
-        $this->assertEquals('', $command->getRawError());
-    }
-
     public function testSSHConnectionWithPassword()
     {
         $connection = $this->createPasswordConnection();
