@@ -2,7 +2,7 @@
 
 namespace JordJD\SSHConnection;
 
-use phpseclib\Net\SSH2;
+use phpseclib3\Net\SSH2;
 use RuntimeException;
 
 class SSHCommand
@@ -14,6 +14,8 @@ class SSHCommand
     private $command;
     private $output;
     private $error;
+    private $exitStatus;
+    private $timedOut;
 
     public function __construct(SSH2 $ssh, string $command)
     {
@@ -26,8 +28,17 @@ class SSHCommand
     private function execute()
     {
         $this->ssh->enableQuietMode();
-        $this->output = $this->ssh->exec($this->command);
-        $this->error = $this->ssh->getStdError();
+        $output = $this->ssh->exec($this->command);
+
+        if ($output === false) {
+            throw new RuntimeException('SSH command could not be executed.');
+        }
+
+        $this->output = (string) $output;
+        $this->error = (string) $this->ssh->getStdError();
+        $exitStatus = $this->ssh->getExitStatus();
+        $this->exitStatus = is_int($exitStatus) ? $exitStatus : null;
+        $this->timedOut = $this->ssh->isTimeout();
     }
 
     public function getRawOutput(): string
@@ -48,5 +59,20 @@ class SSHCommand
     public function getError(): string
     {
         return trim($this->getRawError());
+    }
+
+    public function getExitStatus(): ?int
+    {
+        return $this->exitStatus;
+    }
+
+    public function isSuccessful(): bool
+    {
+        return $this->exitStatus === 0 && !$this->timedOut;
+    }
+
+    public function hasTimedOut(): bool
+    {
+        return $this->timedOut;
     }
 }

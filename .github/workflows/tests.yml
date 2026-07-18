@@ -6,31 +6,36 @@ on:
       - master
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   phpunit:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        php:
-          - '7.2'
-          - '7.4'
-          - '8.0'
-          - '8.4'
+        include:
+          - php: '7.2'
+            composer: 'v2.2'
+          - php: '8.5'
+            composer: 'latest'
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          tools: composer:v2
+          tools: composer:${{ matrix.composer }}
           coverage: none
 
       - name: Install dependencies
-        run: composer update --no-interaction --prefer-dist --no-progress
+        run: |
+          composer validate --strict
+          composer update --no-interaction --prefer-dist --no-progress
 
       - name: Configure SSH integration server
         run: |
@@ -43,9 +48,10 @@ jobs:
 
           mkdir -p "$HOME/.ssh"
           ssh-keygen -q -t rsa -b 4096 -N '' -f "$HOME/.ssh/php_ssh_connection_ci_key"
+          ssh-keygen -q -t rsa -b 4096 -N 'ci-key-passphrase' -f "$HOME/.ssh/php_ssh_connection_ci_encrypted_key"
 
           sudo mkdir -p /home/ci-test/.ssh
-          cat "$HOME/.ssh/php_ssh_connection_ci_key.pub" | sudo tee /home/ci-test/.ssh/authorized_keys >/dev/null
+          cat "$HOME/.ssh/php_ssh_connection_ci_key.pub" "$HOME/.ssh/php_ssh_connection_ci_encrypted_key.pub" | sudo tee /home/ci-test/.ssh/authorized_keys >/dev/null
           sudo chown -R ci-test:ci-test /home/ci-test/.ssh
           sudo chmod 700 /home/ci-test/.ssh
           sudo chmod 600 /home/ci-test/.ssh/authorized_keys
@@ -71,6 +77,8 @@ jobs:
           SSH_TEST_PORT: '22'
           SSH_TEST_USER: ci-test
           SSH_TEST_PASSWORD: ci-test-password
+          SSH_TEST_ENCRYPTED_PRIVATE_KEY_PASSPHRASE: ci-key-passphrase
         run: |
           export SSH_TEST_PRIVATE_KEY_PATH="$HOME/.ssh/php_ssh_connection_ci_key"
+          export SSH_TEST_ENCRYPTED_PRIVATE_KEY_PATH="$HOME/.ssh/php_ssh_connection_ci_encrypted_key"
           vendor/bin/phpunit
