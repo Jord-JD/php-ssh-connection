@@ -57,6 +57,28 @@ final class SSHConnectionTest extends TestCase
         $connection->run('rm -rf ' . escapeshellarg($remoteRootPath));
     }
 
+    public function testRecursiveDownloadRefusesSymbolicLinks()
+    {
+        $connection = $this->createKeyConnection();
+        $remoteRootPath = '/tmp/php-ssh-connection-symlink-' . uniqid('', true);
+        $localRootPath = $this->newTemporaryLocalPath('php-ssh-connection-symlink-');
+
+        $connection->runCommands([
+            'mkdir -p ' . escapeshellarg($remoteRootPath),
+            'ln -s . ' . escapeshellarg($remoteRootPath . '/loop'),
+        ]);
+
+        try {
+            $connection->download($remoteRootPath, $localRootPath);
+            $this->fail('Recursive download should reject symbolic links.');
+        } catch (RuntimeException $exception) {
+            $this->assertNotFalse(strpos($exception->getMessage(), 'symbolic link'));
+        } finally {
+            $this->removeLocalPath($localRootPath);
+            $connection->run('rm -rf ' . escapeshellarg($remoteRootPath));
+        }
+    }
+
     public function testSSHConnectionWithKeyPair()
     {
         $connection = $this->createKeyConnection();
@@ -68,6 +90,9 @@ final class SSHConnectionTest extends TestCase
 
         $this->assertSame('', $command->getError());
         $this->assertSame('', $command->getRawError());
+        $this->assertSame(0, $command->getExitStatus());
+        $this->assertTrue($command->isSuccessful());
+        $this->assertFalse($command->hasTimedOut());
     }
 
     public function testSSHConnectionWithKeyContents()
@@ -88,6 +113,22 @@ final class SSHConnectionTest extends TestCase
         $this->assertSame("Hello world!\n", $command->getRawOutput());
         $this->assertSame('', $command->getError());
         $this->assertSame('', $command->getRawError());
+    }
+
+    public function testSSHConnectionWithEncryptedPrivateKey()
+    {
+        $privateKeyPath = getenv('SSH_TEST_ENCRYPTED_PRIVATE_KEY_PATH');
+        $passphrase = getenv('SSH_TEST_ENCRYPTED_PRIVATE_KEY_PASSPHRASE');
+
+        if (!$privateKeyPath || !$passphrase) {
+            $this->markTestSkipped('Set encrypted private key path and passphrase variables to run this test.');
+        }
+
+        $connection = $this->createBaseConnection()
+            ->withPrivateKey($privateKeyPath, $passphrase)
+            ->connect();
+
+        $this->assertSame('encrypted-key-ok', $connection->run('printf encrypted-key-ok')->getOutput());
     }
 
     public function testSSHConnectionWithPassword()
@@ -118,6 +159,17 @@ final class SSHConnectionTest extends TestCase
         $connection->run('rm -rf ' . escapeshellarg($remotePath));
     }
 
+    public function testCommandExitStatusAndStandardError()
+    {
+        $command = $this->createKeyConnection()->run('printf problem >&2; exit 7');
+
+        $this->assertSame('', $command->getOutput());
+        $this->assertSame('problem', $command->getError());
+        $this->assertSame(7, $command->getExitStatus());
+        $this->assertFalse($command->isSuccessful());
+        $this->assertFalse($command->hasTimedOut());
+    }
+
     public function testRunMultipleCommandsValidation()
     {
         $this->expectException(InvalidArgumentException::class);
@@ -134,6 +186,7 @@ final class SSHConnectionTest extends TestCase
             $connection1->fingerprint(SSHConnection::FINGERPRINT_MD5),
             $connection2->fingerprint(SSHConnection::FINGERPRINT_MD5)
         );
+        $this->assertSame(1, preg_match('/^(?:[0-9a-f]{2}:){15}[0-9a-f]{2}$/', $connection1->fingerprint()));
     }
 
     public function testSha1Fingerprint()
@@ -156,6 +209,7 @@ final class SSHConnectionTest extends TestCase
             $connection1->fingerprint(SSHConnection::FINGERPRINT_SHA256),
             $connection2->fingerprint(SSHConnection::FINGERPRINT_SHA256)
         );
+        $this->assertSame(1, preg_match('/^[A-Za-z0-9+\/]{43}$/', $connection1->fingerprint(SSHConnection::FINGERPRINT_SHA256)));
     }
 
     public function testSha512Fingerprint()
@@ -178,6 +232,27 @@ final class SSHConnectionTest extends TestCase
         $connection->fingerprint('unsupported');
     }
 
+    public function testExpectedFingerprintAllowsMatchingHostBeforeAuthentication()
+    {
+        $fingerprint = $this->createKeyConnection()->fingerprint(SSHConnection::FINGERPRINT_SHA256);
+        $connection = $this->createKeyConfiguredConnection()
+            ->withExpectedFingerprint('SHA256:'.$fingerprint)
+            ->connect();
+
+        $this->assertTrue($connection->isConnected());
+        $this->assertNotFalse(strpos($connection->hostPublicKey(), ' '));
+    }
+
+    public function testExpectedFingerprintRejectsDifferentHostKey()
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Host key fingerprint does not match');
+
+        $this->createKeyConfiguredConnection()
+            ->withExpectedFingerprint('SHA256:'.str_repeat('A', 43))
+            ->connect();
+    }
+
     private function createBaseConnection(): SSHConnection
     {
         $this->requireIntegrationTestsEnabled();
@@ -194,22 +269,27 @@ final class SSHConnectionTest extends TestCase
 
     private function createKeyConnection(): SSHConnection
     {
-        $privateKeyPath = getenv('SSH_TEST_PRIVATE_KEY_PATH') ?: null;
-        $privateKeyContents = $this->getPrivateKeyContents();
+        return $this->createKeyConfiguredConnection()->connect();
+    }
 
-        if (!$privateKeyPath && !$privateKeyContents) {
+    private function createKeyConfiguredConnection(): SSHConnection
+    {
+        $privateKeyPath = getenv('SSH_TEST_PRIVATE_KEY_PATH') ?: null;
+        $privateKeyContents = getenv('SSH_TEST_PRIVATE_KEY_CONTENTS');
+
+        if (!$privateKeyPath && ($privateKeyContents === false || $privateKeyContents === '')) {
             $this->markTestSkipped('Set SSH_TEST_PRIVATE_KEY_PATH or SSH_TEST_PRIVATE_KEY_CONTENTS to run this test.');
         }
 
         $connection = $this->createBaseConnection();
 
-        if ($privateKeyContents) {
+        if ($privateKeyContents !== false && $privateKeyContents !== '') {
             $connection->withPrivateKeyString($privateKeyContents);
         } else {
             $connection->withPrivateKey($privateKeyPath);
         }
 
-        return $connection->connect();
+        return $connection;
     }
 
     private function createPasswordConnection(): SSHConnection

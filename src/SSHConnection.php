@@ -3,11 +3,11 @@
 namespace JordJD\SSHConnection;
 
 use InvalidArgumentException;
-use phpseclib\Crypt\RSA;
-use phpseclib\Net\SCP;
-use phpseclib\Net\SFTP;
-use phpseclib\Net\SSH2;
+use phpseclib3\Crypt\PublicKeyLoader;
+use phpseclib3\Net\SFTP;
+use phpseclib3\Net\SSH2;
 use RuntimeException;
+use Throwable;
 
 class SSHConnection
 {
@@ -22,24 +22,39 @@ class SSHConnection
     private $password;
     private $privateKeyPath;
     private $privateKeyContents;
+    private $privateKeyPassphrase;
     private $timeout;
+    private $expectedFingerprint;
+    private $expectedFingerprintType;
     private $connected = false;
     private $ssh;
 
     public function to(string $hostname): self
     {
+        if (trim($hostname) === '') {
+            throw new InvalidArgumentException('Hostname must not be empty.');
+        }
+
         $this->hostname = $hostname;
         return $this;
     }
 
     public function onPort(int $port): self
     {
+        if ($port < 1 || $port > 65535) {
+            throw new InvalidArgumentException('Port must be between 1 and 65535.');
+        }
+
         $this->port = $port;
         return $this;
     }
 
     public function as(string $username): self
     {
+        if (trim($username) === '') {
+            throw new InvalidArgumentException('Username must not be empty.');
+        }
+
         $this->username = $username;
         return $this;
     }
@@ -50,23 +65,53 @@ class SSHConnection
         return $this;
     }
 
-    public function withPrivateKey(string $privateKeyPath): self
+    public function withPrivateKey(string $privateKeyPath, string $passphrase = null): self
     {
+        if (trim($privateKeyPath) === '') {
+            throw new InvalidArgumentException('Private key path must not be empty.');
+        }
+
         $this->privateKeyPath = $privateKeyPath;
         $this->privateKeyContents = null;
+        $this->privateKeyPassphrase = $passphrase;
         return $this;
     }
 
-    public function withPrivateKeyString(string $privateKeyContents): self
+    public function withPrivateKeyString(string $privateKeyContents, string $passphrase = null): self
     {
+        if ($privateKeyContents === '') {
+            throw new InvalidArgumentException('Private key contents must not be empty.');
+        }
+
         $this->privateKeyContents = $privateKeyContents;
         $this->privateKeyPath = null;
+        $this->privateKeyPassphrase = $passphrase;
         return $this;
     }
 
     public function timeout(int $timeout): self
     {
+        if ($timeout < 0) {
+            throw new InvalidArgumentException('Timeout must be zero or a positive number of seconds.');
+        }
+
         $this->timeout = $timeout;
+        return $this;
+    }
+
+    /**
+     * Require a host-key fingerprint before any authentication is attempted.
+     */
+    public function withExpectedFingerprint(string $fingerprint, string $type = self::FINGERPRINT_SHA256): self
+    {
+        if (trim($fingerprint) === '') {
+            throw new InvalidArgumentException('Expected fingerprint must not be empty.');
+        }
+
+        $this->assertFingerprintType($type);
+        $this->expectedFingerprint = $fingerprint;
+        $this->expectedFingerprintType = $type;
+
         return $this;
     }
 
@@ -80,7 +125,7 @@ class SSHConnection
             throw new InvalidArgumentException('Username not specified.');
         }
 
-        if (!$this->password && !$this->privateKeyPath && !$this->privateKeyContents) {
+        if ($this->password === null && !$this->privateKeyPath && !$this->privateKeyContents) {
             throw new InvalidArgumentException('No password or private key specified.');
         }
     }
@@ -89,17 +134,7 @@ class SSHConnection
     {
         $this->sanityCheck();
 
-        $this->ssh = new SSH2($this->hostname, $this->port);
-
-        if (!$this->ssh) {
-            throw new RuntimeException('Error connecting to server.');
-        }
-
-        $this->authenticateClient($this->ssh);
-
-        if ($this->timeout !== null) {
-            $this->ssh->setTimeout($this->timeout);
-        }
+        $this->ssh = $this->createAuthenticatedClient(SSH2::class);
 
         $this->connected = true;
 
@@ -120,6 +155,10 @@ class SSHConnection
     {
         if (!$this->connected) {
             throw new RuntimeException('Unable to run commands when not connected.');
+        }
+
+        if (trim($command) === '') {
+            throw new InvalidArgumentException('Command must not be empty.');
         }
 
         return new SSHCommand($this->ssh, $command);
@@ -155,23 +194,16 @@ class SSHConnection
             throw new RuntimeException('Unable to get fingerprint when not connected.');
         }
 
-        $hostKey = substr($this->ssh->getServerPublicHostKey(), 8);
+        return $this->fingerprintClient($this->ssh, $type);
+    }
 
-        switch ($type) {
-            case self::FINGERPRINT_MD5:
-                return strtoupper(md5($hostKey));
-
-            case self::FINGERPRINT_SHA1:
-                return strtoupper(sha1($hostKey));
-
-            case self::FINGERPRINT_SHA256:
-                return strtoupper(hash('sha256', $hostKey));
-
-            case self::FINGERPRINT_SHA512:
-                return strtoupper(hash('sha512', $hostKey));
+    public function hostPublicKey(): string
+    {
+        if (!$this->connected) {
+            throw new RuntimeException('Unable to get host public key when not connected.');
         }
 
-        throw new InvalidArgumentException('Invalid fingerprint type specified.');
+        return $this->getHostPublicKey($this->ssh);
     }
 
     public function upload(string $localPath, string $remotePath): bool
@@ -180,17 +212,27 @@ class SSHConnection
             throw new RuntimeException('Unable to upload file when not connected.');
         }
 
-        if (!file_exists($localPath)) {
-            throw new InvalidArgumentException('The local file does not exist.');
+        if (!is_file($localPath) || !is_readable($localPath)) {
+            throw new InvalidArgumentException('The local file does not exist or is not readable.');
         }
 
-        return (new SCP($this->ssh))->put($remotePath, $localPath, SCP::SOURCE_LOCAL_FILE);
+        if (trim($remotePath) === '') {
+            throw new InvalidArgumentException('Remote upload path must not be empty.');
+        }
+
+        $sftp = $this->createSftpClient();
+
+        return $sftp->put($remotePath, $localPath, SFTP::SOURCE_LOCAL_FILE);
     }
 
     public function download(string $remotePath, string $localPath): bool
     {
         if (!$this->connected) {
             throw new RuntimeException('Unable to download file when not connected.');
+        }
+
+        if (trim($remotePath) === '' || trim($localPath) === '') {
+            throw new InvalidArgumentException('Remote and local download paths must not be empty.');
         }
 
         $sftp = $this->createSftpClient();
@@ -217,12 +259,12 @@ class SSHConnection
                 return;
             }
 
-            if (!$this->password) {
+            if ($this->password === null) {
                 throw new RuntimeException('Error authenticating with public-private key pair.');
             }
         }
 
-        if ($this->password) {
+        if ($this->password !== null) {
             $authenticated = $client->login($this->username, $this->password);
             if ($authenticated) {
                 return;
@@ -237,6 +279,10 @@ class SSHConnection
         $privateKeyContents = $this->privateKeyContents;
 
         if (!$privateKeyContents && $this->privateKeyPath) {
+            if (!is_file($this->privateKeyPath) || !is_readable($this->privateKeyPath)) {
+                throw new InvalidArgumentException('Unable to read private key file.');
+            }
+
             $privateKeyContents = @file_get_contents($this->privateKeyPath);
             if ($privateKeyContents === false) {
                 throw new InvalidArgumentException('Unable to read private key file.');
@@ -247,28 +293,19 @@ class SSHConnection
             return null;
         }
 
-        $privateKey = new RSA();
-        if (!$privateKey->loadKey($privateKeyContents)) {
-            throw new InvalidArgumentException('Invalid private key provided.');
+        try {
+            return PublicKeyLoader::loadPrivateKey(
+                $privateKeyContents,
+                $this->privateKeyPassphrase === null ? false : $this->privateKeyPassphrase
+            );
+        } catch (Throwable $exception) {
+            throw new InvalidArgumentException('Invalid private key or passphrase provided.', 0, $exception);
         }
-
-        return $privateKey;
     }
 
     private function createSftpClient()
     {
-        $sftp = new SFTP($this->hostname, $this->port);
-        if (!$sftp) {
-            throw new RuntimeException('Error connecting to server.');
-        }
-
-        $this->authenticateClient($sftp);
-
-        if ($this->timeout !== null) {
-            $sftp->setTimeout($this->timeout);
-        }
-
-        return $sftp;
+        return $this->createAuthenticatedClient(SFTP::class);
     }
 
     private function downloadDirectory(SFTP $sftp, string $remotePath, string $localPath): bool
@@ -291,6 +328,10 @@ class SSHConnection
             $remoteEntryPath = $this->joinRemotePath($remotePath, $entryName);
             $localEntryPath = rtrim($localPath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $entryName;
 
+            if ($sftp->is_link($remoteEntryPath)) {
+                throw new RuntimeException('Refusing to follow a symbolic link during recursive download: '.$remoteEntryPath);
+            }
+
             if ($sftp->is_dir($remoteEntryPath)) {
                 if (!$this->downloadDirectory($sftp, $remoteEntryPath, $localEntryPath)) {
                     return false;
@@ -309,5 +350,96 @@ class SSHConnection
     private function joinRemotePath(string $basePath, string $path): string
     {
         return rtrim($basePath, '/') . '/' . ltrim($path, '/');
+    }
+
+    private function createAuthenticatedClient($clientClass)
+    {
+        $timeout = $this->timeout === null ? 10 : $this->timeout;
+        $client = new $clientClass($this->hostname, $this->port, $timeout);
+
+        if ($this->expectedFingerprint !== null) {
+            $actualFingerprint = $this->fingerprintClient($client, $this->expectedFingerprintType);
+            $expectedFingerprint = $this->normalizeFingerprint($this->expectedFingerprint, $this->expectedFingerprintType);
+            $normalizedActual = $this->normalizeFingerprint($actualFingerprint, $this->expectedFingerprintType);
+
+            if (!hash_equals($expectedFingerprint, $normalizedActual)) {
+                throw new RuntimeException('Host key fingerprint does not match the expected fingerprint.');
+            }
+        }
+
+        $this->authenticateClient($client);
+
+        if ($this->timeout !== null) {
+            $client->setTimeout($this->timeout);
+        }
+
+        return $client;
+    }
+
+    private function fingerprintClient(SSH2 $client, string $type): string
+    {
+        $this->assertFingerprintType($type);
+        $hostKeyBlob = $this->decodeHostPublicKey($this->getHostPublicKey($client));
+
+        if ($type === self::FINGERPRINT_MD5) {
+            return implode(':', str_split(md5($hostKeyBlob), 2));
+        }
+
+        if ($type === self::FINGERPRINT_SHA256) {
+            return rtrim(base64_encode(hash('sha256', $hostKeyBlob, true)), '=');
+        }
+
+        return hash($type, $hostKeyBlob);
+    }
+
+    private function getHostPublicKey(SSH2 $client): string
+    {
+        $hostKey = $client->getServerPublicHostKey();
+
+        if (!is_string($hostKey) || trim($hostKey) === '') {
+            throw new RuntimeException('Unable to retrieve or verify the server host key.');
+        }
+
+        return $hostKey;
+    }
+
+    private function decodeHostPublicKey($hostKey)
+    {
+        $parts = preg_split('/\s+/', trim($hostKey), 3);
+
+        if (count($parts) < 2) {
+            throw new RuntimeException('Server host key is not in OpenSSH format.');
+        }
+
+        $blob = base64_decode($parts[1], true);
+
+        if ($blob === false) {
+            throw new RuntimeException('Server host key payload is not valid base64.');
+        }
+
+        return $blob;
+    }
+
+    private function assertFingerprintType($type)
+    {
+        if (!in_array($type, [self::FINGERPRINT_MD5, self::FINGERPRINT_SHA1, self::FINGERPRINT_SHA256, self::FINGERPRINT_SHA512], true)) {
+            throw new InvalidArgumentException('Invalid fingerprint type specified.');
+        }
+    }
+
+    private function normalizeFingerprint($fingerprint, $type)
+    {
+        $fingerprint = trim($fingerprint);
+        $prefix = strtoupper($type).':';
+
+        if (stripos($fingerprint, $prefix) === 0) {
+            $fingerprint = substr($fingerprint, strlen($prefix));
+        }
+
+        if ($type === self::FINGERPRINT_SHA256) {
+            return rtrim($fingerprint, '=');
+        }
+
+        return strtolower(str_replace(':', '', $fingerprint));
     }
 }

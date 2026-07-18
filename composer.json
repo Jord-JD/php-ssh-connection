@@ -11,10 +11,10 @@
   ],
   "require": {
     "php": ">=7.2",
-    "phpseclib/phpseclib": "^2.0"
+    "phpseclib/phpseclib": "^3.0"
   },
   "require-dev": {
-    "phpunit/phpunit": "^6.5 || ^7.5 || ^8.5 || ^9.6 || ^10.5 || ^11.5"
+    "phpunit/phpunit": "^7.5 || ^8.5 || ^9.6 || ^10.5 || ^11.5 || ^12.5"
   },
   "autoload": {
     "psr-4": {
@@ -26,7 +26,12 @@
   },
   "extra": {
     "branch-alias": {
-      "dev-master": "4.0-dev"
+      "dev-master": "5.0-dev"
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "kylekatarnls/update-helper": false
     }
   }
 }
